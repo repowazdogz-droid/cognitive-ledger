@@ -26,6 +26,8 @@ Four capabilities:
 
 **Reasoning profiles** make thinking shareable and verifiable. Overall calibration (how well does your confidence match your accuracy). Domain-specific calibration. Best and worst emotional states for decision-making. Growth trajectory. Hash-chain verification proving nothing was modified.
 
+Repository: https://github.com/repowazdogz-droid/cognitive-ledger
+
 ## Install
 
 ```bash

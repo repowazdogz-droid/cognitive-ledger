@@ -1,6 +1,6 @@
 {
   "name": "cognitive-ledger",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Cognitive Ledger Protocol (CLP-1.0) — persistent cognitive profiling, bias detection, reasoning patterns",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -9,7 +9,16 @@
     "test": "jest",
     "prepublishOnly": "npm run build"
   },
-  "keywords": ["cognitive", "ledger", "bias", "reasoning", "profile"],
+  "keywords": [
+    "cognitive",
+    "ledger",
+    "bias",
+    "reasoning",
+    "profile",
+    "omega-protocol",
+    "cognitive-ledger",
+    "clp-1.0"
+  ],
   "license": "MIT",
   "devDependencies": {
     "@types/jest": "^29.5.12",
@@ -18,5 +27,25 @@
     "ts-jest": "^29.1.2",
     "typescript": "^5.3.3"
   },
-  "files": ["dist", "README.md"]
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "author": "Warren Smith",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/repowazdogz-droid/cognitive-ledger.git"
+  },
+  "homepage": "https://github.com/repowazdogz-droid/cognitive-ledger#readme",
+  "bugs": {
+    "url": "https://github.com/repowazdogz-droid/cognitive-ledger/issues"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "require": "./dist/index.js",
+      "default": "./dist/index.js"
+    }
+  }
 }
