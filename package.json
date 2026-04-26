@@ -1,7 +1,7 @@
 {
   "name": "cognitive-ledger",
-  "version": "1.0.1",
-  "description": "Cognitive Ledger Protocol (CLP-1.0) — persistent cognitive profiling, bias detection, reasoning patterns",
+  "version": "2.0.0",
+  "description": "Cognitive Ledger Protocol (CLP-2.0) — longitudinal reasoning accountability with typed steps and faithfulness certification",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "scripts": {
@@ -17,7 +17,7 @@
     "profile",
     "omega-protocol",
     "cognitive-ledger",
-    "clp-1.0"
+    "clp-2.0"
   ],
   "license": "MIT",
   "devDependencies": {

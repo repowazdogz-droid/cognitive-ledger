@@ -1,6 +1,6 @@
 "use strict";
 /**
- * Cognitive Ledger Protocol (CLP-1.0) — main CognitiveLedger class.
+ * Cognitive Ledger Protocol (CLP-2.0) — main CognitiveLedger class.
  */
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.CognitiveLedger = void 0;
@@ -9,11 +9,21 @@ const generative_engine_1 = require("./generative-engine");
 const hash_1 = require("./hash");
 const pattern_analyser_1 = require("./pattern-analyser");
 const profile_generator_1 = require("./profile-generator");
+const reasoning_1 = require("./reasoning");
 const verify_1 = require("./verify");
+const migration_1 = require("./migration");
 function clamp01(x) {
     return Math.max(0, Math.min(1, x));
 }
 const PATTERN_ANALYSIS_INTERVAL = 5;
+function defaultFaithfulnessCertification() {
+    return {
+        status: "not_assessed",
+        method: "unverified",
+        method_version: "clp-2.0",
+        certified_at: new Date().toISOString(),
+    };
+}
 class CognitiveLedger {
     constructor(personId) {
         this._entries = [];
@@ -29,6 +39,8 @@ class CognitiveLedger {
         const time_pressure = clamp01(input.time_pressure);
         const stated_confidence = clamp01(input.stated_confidence);
         const entry = {
+            schema_version: "2.0",
+            hash_version: "entry-canonical-v2",
             id: (0, hash_1.generateId)(),
             timestamp,
             domain: input.domain,
@@ -46,14 +58,31 @@ class CognitiveLedger {
             hash: "",
             previous_hash,
             source: input.source,
+            reasoning_steps: (0, reasoning_1.normalizeReasoningSteps)(input.reasoning_steps ?? []),
+            faithfulness: input.faithfulness ?? defaultFaithfulnessCertification(),
+            trace_id: input.trace_id,
+            parent_entry_ids: input.parent_entry_ids ?? [],
+            external_evidence_hashes: input.external_evidence_hashes ?? [],
         };
-        entry.hash = (0, hash_1.hashEntry)(entry.content, entry.previous_hash, entry.timestamp);
         entry.detected_biases = (0, bias_detector_1.detectBiases)(entry, this._entries);
+        entry.hash = (0, hash_1.hashEntryV2)(entry);
         this._entries.push(entry);
         if (this._entries.length % PATTERN_ANALYSIS_INTERVAL === 0) {
             this._patterns = (0, pattern_analyser_1.analysePatterns)(this._entries, this._patterns);
         }
         return entry;
+    }
+    rehashV2Chain() {
+        let previousHash = hash_1.GENESIS_HASH;
+        for (const entry of this._entries) {
+            if (entry.hash_version !== "entry-canonical-v2") {
+                previousHash = entry.hash;
+                continue;
+            }
+            entry.previous_hash = previousHash;
+            entry.hash = (0, hash_1.hashEntryV2)(entry);
+            previousHash = entry.hash;
+        }
     }
     recordOutcome(entryId, outcome) {
         const idx = this._entries.findIndex((e) => e.id === entryId);
@@ -76,6 +105,7 @@ class CognitiveLedger {
                 e.calibrated_confidence = clamp01((e.calibrated_confidence ?? e.stated_confidence) * 0.7 + avgAccuracy * 0.3);
             }
         }
+        this.rehashV2Chain();
         this._patterns = (0, pattern_analyser_1.analysePatterns)(this._entries, this._patterns);
         return entry;
     }
@@ -120,6 +150,13 @@ class CognitiveLedger {
         ledger._patterns = data.patterns ?? [];
         return ledger;
     }
+    static migrateV1JSONToV2(json) {
+        const data = (0, migration_1.migrateV1LedgerJSONToV2)(json);
+        const ledger = new CognitiveLedger(data.personId);
+        ledger._entries = data.entries;
+        ledger._patterns = data.patterns;
+        return ledger;
+    }
     toMarkdown() {
         const profile = this.getProfile();
         const prompts = this.getPrompts();
@@ -144,6 +181,9 @@ class CognitiveLedger {
             "",
             "## Growth",
             `Trajectory: ${(profile.growth_trajectory * 100).toFixed(0)}% | Corrections: ${profile.total_corrections} | Insights: ${profile.total_insights}`,
+            "",
+            "## Faithfulness",
+            `Assessed: ${profile.faithfulness_summary?.assessed_entries ?? 0} | Certified: ${profile.faithfulness_summary?.certified_entries ?? 0} | Rejected: ${profile.faithfulness_summary?.rejected_entries ?? 0}`,
             "",
             "## Top 5 prompts",
             ...prompts.slice(0, 5).map((p) => `- [${p.prompt_type}] ${p.content}`),

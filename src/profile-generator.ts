@@ -1,5 +1,5 @@
 /**
- * Cognitive Ledger Protocol (CLP-1.0) — shareable reasoning profile with verification.
+ * Cognitive Ledger Protocol (CLP-2.0) — shareable reasoning profile with verification.
  */
 
 import { sha256 } from "./hash";
@@ -14,6 +14,11 @@ import type {
 
 function clamp01(x: number): number {
   return Math.max(0, Math.min(1, x));
+}
+
+function average(values: number[]): number | undefined {
+  if (values.length === 0) return undefined;
+  return values.reduce((sum, value) => sum + value, 0) / values.length;
 }
 
 export function generateProfile(
@@ -113,6 +118,33 @@ export function generateProfile(
   ).length;
   const total_insights = entries.filter((e) => e.event_type === "insight").length;
 
+  const assessedFaithfulness = entries.filter(
+    (e) => e.faithfulness && e.faithfulness.method !== "unverified"
+  );
+  const faithfulness_summary = {
+    assessed_entries: assessedFaithfulness.length,
+    certified_entries: entries.filter(
+      (e) => e.faithfulness?.status === "certified"
+    ).length,
+    rejected_entries: entries.filter((e) => e.faithfulness?.status === "rejected")
+      .length,
+    average_coverage: average(
+      assessedFaithfulness
+        .map((e) => e.faithfulness?.metrics?.coverage)
+        .filter((value): value is number => value !== undefined)
+    ),
+    average_evidence_validity_rate: average(
+      assessedFaithfulness
+        .map((e) => e.faithfulness?.metrics?.evidence_validity_rate)
+        .filter((value): value is number => value !== undefined)
+    ),
+    average_unit_validity_ratio: average(
+      assessedFaithfulness
+        .map((e) => e.faithfulness?.metrics?.unit_validity_ratio)
+        .filter((value): value is number => value !== undefined)
+    ),
+  };
+
   const verification = verifyChain(entries);
   const payload = [
     personId,
@@ -124,6 +156,7 @@ export function generateProfile(
     overall_calibration,
     total_corrections,
     total_insights,
+    JSON.stringify(faithfulness_summary),
     growth_trajectory,
     verification.entries_checked,
     verification.valid,
@@ -144,6 +177,7 @@ export function generateProfile(
     growth_trajectory,
     total_corrections,
     total_insights,
+    faithfulness_summary,
     hash,
     verification: {
       valid: verification.valid,

@@ -1,5 +1,5 @@
 /**
- * Cognitive Ledger Protocol (CLP-1.0) — type definitions.
+ * Cognitive Ledger Protocol (CLP-2.0) — type definitions.
  */
 
 export type EmotionalState =
@@ -54,6 +54,109 @@ export type EventType =
   | "insight"
   | "creation";
 
+export type SchemaVersion = "1.0" | "2.0";
+
+export type HashVersion = "content-chain-v1" | "entry-canonical-v2";
+
+export type ReasoningStepKind =
+  | "premise"
+  | "observation"
+  | "assumption"
+  | "inference"
+  | "calculation"
+  | "tool_result"
+  | "counterfactual"
+  | "conclusion"
+  | "reflection";
+
+export type ReasoningValueType =
+  | "text"
+  | "boolean"
+  | "number"
+  | "probability"
+  | "quantity"
+  | "money"
+  | "duration"
+  | "date"
+  | "category"
+  | "evidence_ref"
+  | "decision";
+
+export type ReasoningOperationType =
+  | "assert"
+  | "observe"
+  | "assume"
+  | "infer"
+  | "calculate"
+  | "retrieve"
+  | "compare"
+  | "transform"
+  | "conclude"
+  | "reflect";
+
+export type FaithfulnessStatus =
+  | "not_assessed"
+  | "self_reported"
+  | "evidence_linked"
+  | "typed_checked"
+  | "certified"
+  | "rejected";
+
+export type FaithfulnessCertificationMethod =
+  | "structural_check"
+  | "external_verifier"
+  | "consensus"
+  | "unverified";
+
+export interface ReasoningTypecheck {
+  valid: boolean;
+  errors: string[];
+  signature: string;
+}
+
+export interface ReasoningStep {
+  id: string;
+  index: number;
+  kind: ReasoningStepKind;
+  statement: string;
+  input_type: ReasoningValueType[];
+  output_type: ReasoningValueType;
+  operation_type: ReasoningOperationType;
+  value?: string | number | boolean;
+  unit?: string;
+  depends_on: string[];
+  evidence_refs: string[];
+  rule_schema: string;
+  rule_signature?: string;
+  typecheck: ReasoningTypecheck;
+}
+
+export interface FaithfulnessCertificationMetrics {
+  coverage?: number;
+  evidence_validity_rate?: number;
+  unit_validity_ratio?: number;
+  path_exists?: boolean;
+  minimal_path_size?: number;
+}
+
+export interface FaithfulnessCertificationGate {
+  name: string;
+  passed: boolean;
+  thresholds: Record<string, number | boolean>;
+}
+
+export interface FaithfulnessCertification {
+  status: FaithfulnessStatus;
+  method: FaithfulnessCertificationMethod;
+  method_version: string;
+  certified_at: string;
+  metrics?: FaithfulnessCertificationMetrics;
+  gate?: FaithfulnessCertificationGate;
+  certificate_hash?: string;
+  certifier?: string;
+  notes?: string;
+}
+
 export interface BiasDetection {
   type: BiasType;
   confidence: number;
@@ -69,6 +172,8 @@ export interface LedgerEntryOutcome {
 }
 
 export interface LedgerEntry {
+  schema_version?: SchemaVersion;
+  hash_version?: HashVersion;
   id: string;
   timestamp: string;
   domain: Domain;
@@ -88,6 +193,11 @@ export interface LedgerEntry {
   hash: string;
   previous_hash: string;
   source?: string;
+  reasoning_steps?: ReasoningStep[];
+  faithfulness?: FaithfulnessCertification;
+  trace_id?: string;
+  parent_entry_ids?: string[];
+  external_evidence_hashes?: string[];
 }
 
 export interface CognitivePattern {
@@ -142,6 +252,14 @@ export interface ReasoningProfile {
   growth_trajectory: number;
   total_corrections: number;
   total_insights: number;
+  faithfulness_summary?: {
+    assessed_entries: number;
+    certified_entries: number;
+    rejected_entries: number;
+    average_coverage?: number;
+    average_evidence_validity_rate?: number;
+    average_unit_validity_ratio?: number;
+  };
   hash: string;
   verification: { valid: boolean; entries_checked: number };
 }
@@ -159,6 +277,11 @@ export interface EntryInput {
   evidence_used?: string[];
   visibility?: Visibility;
   source?: string;
+  reasoning_steps?: ReasoningStep[];
+  faithfulness?: FaithfulnessCertification;
+  trace_id?: string;
+  parent_entry_ids?: string[];
+  external_evidence_hashes?: string[];
 }
 
 export interface OutcomeInput {

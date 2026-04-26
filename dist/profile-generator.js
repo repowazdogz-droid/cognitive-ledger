@@ -1,6 +1,6 @@
 "use strict";
 /**
- * Cognitive Ledger Protocol (CLP-1.0) — shareable reasoning profile with verification.
+ * Cognitive Ledger Protocol (CLP-2.0) — shareable reasoning profile with verification.
  */
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.generateProfile = generateProfile;
@@ -8,6 +8,11 @@ const hash_1 = require("./hash");
 const verify_1 = require("./verify");
 function clamp01(x) {
     return Math.max(0, Math.min(1, x));
+}
+function average(values) {
+    if (values.length === 0)
+        return undefined;
+    return values.reduce((sum, value) => sum + value, 0) / values.length;
 }
 function generateProfile(personId, entries, patterns) {
     const generated_at = new Date().toISOString();
@@ -75,6 +80,22 @@ function generateProfile(personId, entries, patterns) {
     }
     const total_corrections = entries.filter((e) => e.event_type === "correction").length;
     const total_insights = entries.filter((e) => e.event_type === "insight").length;
+    const assessedFaithfulness = entries.filter((e) => e.faithfulness && e.faithfulness.method !== "unverified");
+    const faithfulness_summary = {
+        assessed_entries: assessedFaithfulness.length,
+        certified_entries: entries.filter((e) => e.faithfulness?.status === "certified").length,
+        rejected_entries: entries.filter((e) => e.faithfulness?.status === "rejected")
+            .length,
+        average_coverage: average(assessedFaithfulness
+            .map((e) => e.faithfulness?.metrics?.coverage)
+            .filter((value) => value !== undefined)),
+        average_evidence_validity_rate: average(assessedFaithfulness
+            .map((e) => e.faithfulness?.metrics?.evidence_validity_rate)
+            .filter((value) => value !== undefined)),
+        average_unit_validity_ratio: average(assessedFaithfulness
+            .map((e) => e.faithfulness?.metrics?.unit_validity_ratio)
+            .filter((value) => value !== undefined)),
+    };
     const verification = (0, verify_1.verifyChain)(entries);
     const payload = [
         personId,
@@ -86,6 +107,7 @@ function generateProfile(personId, entries, patterns) {
         overall_calibration,
         total_corrections,
         total_insights,
+        JSON.stringify(faithfulness_summary),
         growth_trajectory,
         verification.entries_checked,
         verification.valid,
@@ -105,6 +127,7 @@ function generateProfile(personId, entries, patterns) {
         growth_trajectory,
         total_corrections,
         total_insights,
+        faithfulness_summary,
         hash,
         verification: {
             valid: verification.valid,

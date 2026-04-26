@@ -5,12 +5,16 @@
 import {
   CognitiveLedger,
   verifyChain,
+  hashEntry,
+  hashEntryV2,
   detectBiases,
   analysePatterns,
   generatePrompts,
   generateProfile,
+  migrateV1ChainToV2,
+  validateReasoningStep,
 } from "../src/index";
-import type { LedgerEntry } from "../src/types";
+import type { FaithfulnessCertification, LedgerEntry, ReasoningStep } from "../src/types";
 
 function entryInput(overrides: Partial<Parameters<CognitiveLedger["record"]>[0]> = {}) {
   return {
@@ -22,6 +26,48 @@ function entryInput(overrides: Partial<Parameters<CognitiveLedger["record"]>[0]>
     time_pressure: 0.2,
     stated_confidence: 0.7,
     ...overrides,
+  };
+}
+
+function typedStep(overrides: Partial<ReasoningStep> = {}): ReasoningStep {
+  return {
+    id: "step-1",
+    index: 0,
+    kind: "premise",
+    statement: "MRI evidence supports staged treatment.",
+    input_type: [],
+    output_type: "text",
+    operation_type: "assert",
+    value: "MRI evidence supports staged treatment.",
+    depends_on: [],
+    evidence_refs: ["mri:hash"],
+    rule_schema: "pc-cot/assert/v1",
+    typecheck: { valid: false, errors: [], signature: "" },
+    ...overrides,
+  };
+}
+
+function certification(
+  method: FaithfulnessCertification["method"],
+  status: FaithfulnessCertification["status"] = "typed_checked"
+): FaithfulnessCertification {
+  return {
+    status,
+    method,
+    method_version: "test-v1",
+    certified_at: "2026-04-26T00:00:00.000Z",
+    metrics: {
+      coverage: 1,
+      evidence_validity_rate: 0.9,
+      unit_validity_ratio: 1,
+      path_exists: true,
+      minimal_path_size: 1,
+    },
+    gate: {
+      name: "unit-test",
+      passed: status !== "rejected",
+      thresholds: { coverage: 0.8, path_exists: true },
+    },
   };
 }
 
@@ -124,6 +170,172 @@ describe("Integrity", () => {
     const r = verifyChain(entries);
     expect(r.valid).toBe(false);
     expect(r.broken_at).toBe(1);
+  });
+});
+
+describe("CLP-2.0 typed reasoning and faithfulness", () => {
+  test("typed reasoning step round-trip preserves runtime typecheck", () => {
+    const ledger = new CognitiveLedger("u");
+    const e = ledger.record(
+      entryInput({
+        reasoning_steps: [
+          typedStep(),
+          typedStep({
+            id: "step-2",
+            index: 1,
+            kind: "conclusion",
+            statement: "Proceed with staged treatment.",
+            input_type: ["text"],
+            output_type: "decision",
+            operation_type: "conclude",
+            value: "Proceed with staged treatment.",
+            depends_on: ["step-1"],
+            rule_schema: "pc-cot/conclude/v1",
+          }),
+        ],
+      })
+    );
+
+    expect(e.schema_version).toBe("2.0");
+    expect(e.hash_version).toBe("entry-canonical-v2");
+    expect(e.reasoning_steps?.[0].typecheck.valid).toBe(true);
+    expect(e.reasoning_steps?.[1].typecheck.signature).toBe(
+      "pc-cot/conclude/v1:conclude(text)->decision"
+    );
+
+    const restored = CognitiveLedger.fromJSON(ledger.toJSON());
+    expect(restored.getEntries()[0].reasoning_steps?.length).toBe(2);
+    expect(restored.verify().valid).toBe(true);
+  });
+
+  test("type signatures are verified at runtime", () => {
+    const invalid = typedStep({
+      output_type: "probability",
+      operation_type: "calculate",
+      input_type: [],
+      value: 1.2,
+      rule_schema: "pc-cot/calculate/v1",
+    });
+
+    const result = validateReasoningStep(invalid);
+    expect(result.valid).toBe(false);
+    expect(result.errors.join(" ")).toMatch(/requires|value/);
+
+    const ledger = new CognitiveLedger("u");
+    ledger.record(entryInput({ reasoning_steps: [invalid] }));
+    expect(ledger.verify().valid).toBe(false);
+  });
+
+  test("faithfulness certification methods are recorded and summarised", () => {
+    const methods: FaithfulnessCertification["method"][] = [
+      "structural_check",
+      "external_verifier",
+      "consensus",
+      "unverified",
+    ];
+    const ledger = new CognitiveLedger("u");
+
+    for (const method of methods) {
+      ledger.record(
+        entryInput({
+          content: method,
+          faithfulness: certification(
+            method,
+            method === "unverified" ? "not_assessed" : "certified"
+          ),
+        })
+      );
+    }
+
+    const entries = ledger.getEntries();
+    expect(entries.map((e) => e.faithfulness?.method)).toEqual(methods);
+    const profile = ledger.getProfile();
+    expect(profile.faithfulness_summary?.assessed_entries).toBe(3);
+    expect(profile.faithfulness_summary?.certified_entries).toBe(3);
+  });
+});
+
+describe("CLP-2.0 dual hash verification and migration", () => {
+  test("v2 hash differs from v1 hash for same entry data", () => {
+    const ledger = new CognitiveLedger("u");
+    const e = ledger.record(entryInput({ content: "Same content" }));
+
+    expect(e.hash).toBe(hashEntryV2(e));
+    expect(e.hash).not.toBe(hashEntry(e.content, e.previous_hash, e.timestamp));
+  });
+
+  test("v1 chains verify with v1 hash logic", () => {
+    const v1: LedgerEntry = {
+      id: "v1-1",
+      timestamp: "2026-04-26T00:00:00.000Z",
+      domain: "general",
+      event_type: "decision",
+      content: "Legacy decision",
+      emotional_state: "calm",
+      energy_level: 0.5,
+      time_pressure: 0.2,
+      stated_confidence: 0.7,
+      alternatives_considered: [],
+      assumptions: [],
+      evidence_used: [],
+      detected_biases: [],
+      visibility: "private",
+      previous_hash: "0".repeat(64),
+      hash: "",
+    };
+    v1.hash = hashEntry(v1.content, v1.previous_hash, v1.timestamp);
+
+    expect(verifyChain([v1], { mode: "v1" }).valid).toBe(true);
+    expect(verifyChain([v1]).hash_version).toBe("content-chain-v1");
+  });
+
+  test("v2 chains verify with v2 hash logic", () => {
+    const ledger = new CognitiveLedger("u");
+    ledger.record(entryInput({ content: "A" }));
+    ledger.record(entryInput({ content: "B" }));
+
+    const result = verifyChain([...ledger.getEntries()], { mode: "v2" });
+    expect(result.valid).toBe(true);
+    expect(result.hash_version).toBe("entry-canonical-v2");
+  });
+
+  test("migration helper reads v1 chains into v2 entries", () => {
+    const first: LedgerEntry = {
+      id: "v1-1",
+      timestamp: "2026-04-26T00:00:00.000Z",
+      domain: "general",
+      event_type: "decision",
+      content: "Legacy first",
+      emotional_state: "calm",
+      energy_level: 0.5,
+      time_pressure: 0.2,
+      stated_confidence: 0.7,
+      alternatives_considered: [],
+      assumptions: [],
+      evidence_used: [],
+      detected_biases: [],
+      visibility: "private",
+      previous_hash: "0".repeat(64),
+      hash: "",
+    };
+    first.hash = hashEntry(first.content, first.previous_hash, first.timestamp);
+    const second: LedgerEntry = {
+      ...first,
+      id: "v1-2",
+      timestamp: "2026-04-26T00:01:00.000Z",
+      content: "Legacy second",
+      previous_hash: first.hash,
+      hash: "",
+    };
+    second.hash = hashEntry(second.content, second.previous_hash, second.timestamp);
+
+    const migrated = migrateV1ChainToV2([first, second]);
+
+    expect(migrated[0].schema_version).toBe("2.0");
+    expect(migrated[0].hash_version).toBe("entry-canonical-v2");
+    expect(migrated[1].previous_hash).toBe(migrated[0].hash);
+    expect(migrated[0].faithfulness?.method).toBe("unverified");
+    expect(verifyChain(migrated, { mode: "v2" }).valid).toBe(true);
   });
 });
 
